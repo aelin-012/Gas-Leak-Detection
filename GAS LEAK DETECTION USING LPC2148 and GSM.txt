@@ -1,0 +1,87 @@
+GAS LEAK DETECTION USING LPC2148 and GSM Module.
+
+#include <lpc214x.h>
+
+#define GSM_NUMBER "+923326062060"  // Replace with your GSM number
+
+void ser_init(void);
+void tx(unsigned char c);
+unsigned char rx(void);
+void tx_str(unsigned char *s);
+void sms(unsigned char *num1, unsigned char *msg);
+void gsm_delay(void);
+
+void sendAlert();
+
+int main() {
+    ser_init();
+
+    // Initialize GPIO Pin for Gas Sensor Input
+    PINSEL0 &= ~(3<<14); // Set P0.7 as GPIO
+    IO0DIR &= ~(1<<7);   // Set P0.7 as Input
+
+    while(1) {
+        if (IO0PIN & (1<<7)) {
+            sendAlert();
+            gsm_delay(); // Delay to avoid continuous alerts due to high output
+        }
+    }
+}
+
+char message[] = "ALERT: GAS LEAKAGE"; // Array size is 20 (19 characters + 1 for null terminator)
+
+void sendAlert() {
+    sms(GSM_NUMBER, "ALERT: GAS LEAKAGE");
+}
+
+void ser_init() {
+    VPBDIV = 0x01;      // PCLK = 12MHz
+    PINSEL0 |= (1<<0) | (1<<2); // Enable TxD0 and RxD0
+    U0LCR = 0x83;
+    U0DLL = 98;         // Set for 9600 baud rate @ 12MHz PCLK
+    U0DLM = 0;
+    U0LCR = 0x03;
+    U0TER = (1<<7);
+    gsm_delay(); // Added delay after UART configuration
+}
+
+void tx(unsigned char c) {
+    U0THR = c;
+    while (!(U0LSR & (1<<5)));
+}
+
+void tx_str(unsigned char *s) {
+    while (*s) {
+        tx(*s++);
+    }
+    tx('\0');
+	tx(0x0D); // Sending carriage return
+    tx(0x0A); // Sending line feed // Sending null terminator after the string
+}
+
+unsigned char rx() {
+    while (!(U0LSR & (1<<0)));
+    return U0RBR;
+}
+
+void sms(unsigned char *num1, unsigned char *msg) {
+    tx_str("AT\r\n");
+    gsm_delay();
+
+    tx_str("AT+CMGF=1\r\n");
+    gsm_delay();
+
+    tx_str("AT+CMGS=\"");
+    tx_str(num1);
+    tx_str("\"\r\n");
+    gsm_delay();
+
+    tx_str(msg);
+    tx(0x1A); // ASCII code for Ctrl+Z
+    gsm_delay();
+}
+
+void gsm_delay() {
+    unsigned long int gsm_del;
+    for (gsm_del = 0; gsm_del <= 50000; gsm_del++); // Adjust delay as needed
+}
